@@ -1,4 +1,4 @@
-module github.com/xscope0/idev
+module github.com/gwnodex-bit/idev
 
 go 1.26.6
 

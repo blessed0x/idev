@@ -27,7 +27,7 @@ tunnel that manages itself.
 ## Install
 
 ```bash
-go install github.com/xscope0/idev/cmd/idev@latest        # any OS with Go
+go install github.com/gwnodex-bit/idev/cmd/idev@latest        # any OS with Go
 ```
 
 Prebuilt binaries land with releases (macOS/Linux/Windows × arm64/amd64).
@@ -118,7 +118,7 @@ hermetic-httptest; hardware-dependent tests live behind `-tags live`.
 - [danielpaulus/go-ios](https://github.com/danielpaulus/go-ios) — the pure-Go Apple protocol stack doing the heavy lifting
 - [doronz88/pymobiledevice3](https://github.com/doronz88/pymobiledevice3) — the original proof of how far lockdown services go; UX benchmark throughout
 - [jailbreakdotparty/Omega](https://github.com/jailbreakdotparty/Omega) — the blacklist remover, ported faithfully with permission of its design
-- [xscope0/xkvm-ios-injector](https://github.com/xscope0/xkvm-ios-injector) — idev's device subsystem was battle-tested there first
+- [xscope0/xkvm-ios-injector](https://github.com/gwnodex-bit/xkvm-ios-injector) — idev's device subsystem was battle-tested there first
 
 ## License
 

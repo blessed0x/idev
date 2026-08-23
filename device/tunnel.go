@@ -15,7 +15,7 @@ import (
 	"time"
 
 	"github.com/danielpaulus/go-ios/ios"
-	"github.com/xscope0/idev/internal/log"
+	"github.com/gwnodex-bit/idev/internal/log"
 )
 
 // The tunnel-info endpoint contract is three lines of HTTP: go-ios's

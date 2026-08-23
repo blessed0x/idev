@@ -19,7 +19,7 @@ import (
 	"github.com/danielpaulus/go-ios/ios/syslog"
 	"github.com/danielpaulus/go-ios/ios/zipconduit"
 
-	"github.com/xscope0/idev/internal/log"
+	"github.com/gwnodex-bit/idev/internal/log"
 )
 
 // GoIOS adapts go-ios v1.3.x to the Handler contract.

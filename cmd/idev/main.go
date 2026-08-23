@@ -10,8 +10,8 @@ package main
 import (
 	"os"
 
-	"github.com/xscope0/idev/device"
-	"github.com/xscope0/idev/internal/log"
+	"github.com/gwnodex-bit/idev/device"
+	"github.com/gwnodex-bit/idev/internal/log"
 )
 
 func main() {
