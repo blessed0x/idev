@@ -11,38 +11,39 @@ import (
 
 // fakeHandler records everything and returns scripted results.
 type fake struct {
-	closeCalls   int
-	listCalls    int
-	lists        [][]Dev
-	listErr      error
-	pairCalls    []pairCall
-	pairErr      error
-	infoCalls    int
-	infoVal      Info
-	infoErr      error
-	appsCalls    []appsCall
-	appsVal      []App
-	appsErr      error
-	installs     []installCall
-	installErr   error
-	uninstalls   []string
-	launchCalls  []launchCall
-	launchPID    uint64
-	launchErr    error
-	killCalls    []uint64
-	killErr      error
-	syslogOut    string
-	syslogErr    error
-	watchEvents  []WatchEvent
-	forwardCalls [][2]uint16
-	clipboard    string
-	clipboardSet string
-	locationSet  string
-	filesLs      []string
-	pulledPath   string
-	pushedPath   string
-	restarts     int
-	shutdowns    int
+	closeCalls    int
+	listCalls     int
+	lists         [][]Dev
+	listErr       error
+	pairCalls     []pairCall
+	pairErr       error
+	infoCalls     int
+	infoVal       Info
+	infoErr       error
+	appsCalls     []appsCall
+	appsVal       []App
+	appsErr       error
+	installs      []installCall
+	installErr    error
+	uninstalls    []string
+	launchCalls   []launchCall
+	launchPID     uint64
+	launchErr     error
+	killCalls     []uint64
+	killErr       error
+	syslogOut     string
+	syslogErr     error
+	watchEvents   []WatchEvent
+	forwardCalls  [][2]uint16
+	clipboard     string
+	clipboardSet  string
+	locationSet   string
+	filesLs       []string
+	pulledPath    string
+	pushedPath    string
+	recoveryEnter string
+	restarts      int
+	shutdowns     int
 }
 
 type nopCloser struct{}
@@ -180,7 +181,19 @@ func (f *fake) FilesRemove(ctx context.Context, udid, appID, remotePath string) 
 func (f *fake) FilesMkdir(ctx context.Context, udid, appID, remotePath string) error {
 	return nil
 }
-func (f *fake) Restart(ctx context.Context, udid string) error { f.restarts++; return nil }
+func (f *fake) RecoveryEnter(ctx context.Context, udid string) error {
+	f.recoveryEnter = udid
+	return nil
+}
+func (f *fake) RecoveryExit(ctx context.Context, udid string) error { return nil }
+func (f *fake) DDIMount(ctx context.Context, udid, imagePath string, download bool) error {
+	return nil
+}
+func (f *fake) DDIStatus(ctx context.Context, udid string) ([]string, error) {
+	return []string{"a1b2c3d4e5f60718"}, nil
+}
+func (f *fake) DDIUnmount(ctx context.Context, udid string) error { return nil }
+func (f *fake) Restart(ctx context.Context, udid string) error    { f.restarts++; return nil }
 func (f *fake) OmegaRestore(ctx context.Context, udid string, progress func(float64)) error {
 	f.pairCalls = append(f.pairCalls, pairCall{udid, nil})
 	return nil

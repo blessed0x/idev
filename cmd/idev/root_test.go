@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	ios "github.com/danielpaulus/go-ios/ios"
 	"io"
 	"net"
 	"os"
@@ -34,6 +35,9 @@ type stubDevHandler struct {
 	crashList    []string
 	filesLs      []string
 	filesAppID   string
+	ddiImage     string
+	ddiDownload  bool
+	ddiImages    []string
 }
 
 func (s *stubDevHandler) Close() error                                   { return nil }
@@ -123,6 +127,17 @@ func (s *stubDevHandler) FilesRemove(ctx context.Context, udid, appID, path stri
 func (s *stubDevHandler) FilesMkdir(ctx context.Context, udid, appID, path string) error {
 	return nil
 }
+func (s *stubDevHandler) RecoveryEnter(ctx context.Context, udid string) error { return nil }
+func (s *stubDevHandler) RecoveryExit(ctx context.Context, udid string) error  { return nil }
+func (s *stubDevHandler) DDIMount(ctx context.Context, udid, imagePath string, download bool) error {
+	s.ddiImage = imagePath
+	s.ddiDownload = download
+	return nil
+}
+func (s *stubDevHandler) DDIStatus(ctx context.Context, udid string) ([]string, error) {
+	return s.ddiImages, nil
+}
+func (s *stubDevHandler) DDIUnmount(ctx context.Context, udid string) error { return nil }
 
 type nopCloser struct{}
 
@@ -675,5 +690,62 @@ func TestDeviceFilesLsPassesAppScope(t *testing.T) {
 	}
 	if stub.filesAppID != "com.example.app" {
 		t.Fatalf("-a must scope to the app sandbox, got %q", stub.filesAppID)
+	}
+}
+
+func TestDeviceRecoveryEnterPassesThrough(t *testing.T) {
+	stub := &stubDevHandler{devs: []device.Dev{{UDID: "AAAA", Transport: device.TransportUSB}}}
+	orig := deviceHandler
+	deviceHandler = func(o device.Options) device.Handler { return stub }
+	t.Cleanup(func() { deviceHandler = orig })
+
+	if _, err := runDeviceCmdStub(t, stub, "recovery", "enter"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := runDeviceCmdStub(t, stub, "recovery", "bogus"); err == nil {
+		t.Fatal("unknown recovery verb must fail")
+	}
+}
+
+func TestDeviceDDIMountFlagsAndStatus(t *testing.T) {
+	dir := t.TempDir()
+	img := filepath.Join(dir, "image.dmg")
+	os.WriteFile(img, []byte("ddi"), 0o644)
+
+	stub := &stubDevHandler{
+		devs:      []device.Dev{{UDID: "AAAA", Transport: device.TransportUSB}},
+		ddiImages: []string{"a1b2c3d4e5f60718"},
+	}
+	orig := deviceHandler
+	deviceHandler = func(o device.Options) device.Handler { return stub }
+	t.Cleanup(func() { deviceHandler = orig })
+
+	if _, err := runDeviceCmdStub(t, stub, "ddi", "mount", "--image", img); err != nil {
+		t.Fatal(err)
+	}
+	if stub.ddiImage != img || stub.ddiDownload {
+		t.Fatalf("flags must reach handler: %q %v", stub.ddiImage, stub.ddiDownload)
+	}
+
+	out, err := runDeviceCmdStub(t, stub, "ddi", "status")
+	if err != nil || !strings.Contains(out, "a1b2c3d4e5f60718") {
+		t.Fatalf("status output wrong: %q %v", out, err)
+	}
+}
+
+func TestClassifyStateShapes(t *testing.T) {
+	cases := []struct {
+		serial string
+		want   string
+	}{
+		{"0000810100123456789abcdef0123456789abcdef", device.StateNormal},
+		{"CPID:8960 CPRV:11 BDID:98 ECID:0011223344556677", device.StateRecovery},
+		{"PWNED:DFU CPID:8960", device.StateRecovery},
+	}
+	for _, tc := range cases {
+		props := ios.DeviceProperties{SerialNumber: tc.serial, ConnectionType: "USB"}
+		if got := device.ClassifyState(props); got != tc.want {
+			t.Errorf("ClassifyState(%q) = %q, want %q", tc.serial, got, tc.want)
+		}
 	}
 }

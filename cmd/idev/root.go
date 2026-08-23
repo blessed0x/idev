@@ -64,6 +64,9 @@ Subcommands:
   idev watch               live attach/detach events (Ctrl-C stops)
   idev screenshot [f.png]  save a PNG of the screen (default: timestamped)
   idev devmode             iOS 16+ Developer Mode switch status
+  idev recovery enter      reboot into Recovery mode (exit needs raw USB)
+  idev ddi mount|status|unmount   Developer Disk Image control (iOS <=16)
+  idev backup inspect      inventory an offline legacy backup directory
   idev forward 8080 8080   iproxy-style relay, localhost -> device port
   idev pasteboard get|set  read or write the device clipboard
 
@@ -104,7 +107,11 @@ When more than one device is connected, pick one with --udid.`,
 					for _, tr := range d.Transports {
 						trans = append(trans, string(tr))
 					}
-					fmt.Fprintf(cmd.OutOrStdout(), "%s  %s\n", d.UDID, strings.Join(trans, "+"))
+					line := fmt.Sprintf("%s  %s", d.UDID, strings.Join(trans, "+"))
+					if d.State != "" && d.State != device.StateNormal {
+						line += "  [" + d.State + "]"
+					}
+					fmt.Fprintln(cmd.OutOrStdout(), line)
 				}
 				return nil
 			})
@@ -755,7 +762,64 @@ Recursive for pull/push. Every path is what the service sees (/ = root).`}
 		}}
 	files.AddCommand(filesLs, filesPull, filesPush, filesRm, filesMkdir)
 
-	cmd.AddCommand(list, doctor, pair, info, battery, apps, install, uninstall, launch, kill, syslogCmd, restart, shutdown, omega, watch, screenshot, devmode, forwardCmd, pasteboardCmd, location, crash, files)
+	// recovery: legacy boot-stage verbs (L1).
+	recovery := &cobra.Command{Use: "recovery <enter|exit>", Short: "enter Recovery mode; exit needs a raw-USB tool (honestly refused)",
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			dh := h()
+			defer dh.Close()
+			target, err := resolveUDID(cmd, dh, udid)
+			if err != nil {
+				return err
+			}
+			switch args[0] {
+			case "enter":
+				return dh.RecoveryEnter(cmd.Context(), target.UDID)
+			case "exit":
+				return dh.RecoveryExit(cmd.Context(), target.UDID)
+			default:
+				return fmt.Errorf("unknown recovery verb %q (use enter or exit)", args[0])
+			}
+		}}
+
+	// ddi: Developer Disk Image mounting for iOS <=16 (L2).
+	var ddiImage string
+	var ddiDownload bool
+	ddi := &cobra.Command{Use: "ddi <mount|status|unmount>", Short: "Developer Disk Image control for iOS <=16 (17+ uses tunnels)",
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			dh := h()
+			defer dh.Close()
+			target, err := resolveUDID(cmd, dh, udid)
+			if err != nil {
+				return err
+			}
+			switch args[0] {
+			case "mount":
+				return dh.DDIMount(cmd.Context(), target.UDID, ddiImage, ddiDownload)
+			case "status":
+				sigs, serr := dh.DDIStatus(cmd.Context(), target.UDID)
+				if serr != nil {
+					return serr
+				}
+				if len(sigs) == 0 {
+					log.Infof("no developer disk image mounted")
+					return nil
+				}
+				for _, sig := range sigs {
+					fmt.Fprintf(cmd.OutOrStdout(), "mounted image signature: %s\n", sig)
+				}
+				return nil
+			case "unmount":
+				return dh.DDIUnmount(cmd.Context(), target.UDID)
+			default:
+				return fmt.Errorf("unknown ddi verb %q (use mount, status or unmount)", args[0])
+			}
+		}}
+	ddi.Flags().StringVar(&ddiImage, "image", "", "local Developer Disk Image (.dmg); required unless --download")
+	ddi.Flags().BoolVar(&ddiDownload, "download", false, "fetch the matching image from go-ios's artifact mirror (network)")
+
+	cmd.AddCommand(list, doctor, pair, info, battery, apps, install, uninstall, launch, kill, syslogCmd, restart, shutdown, omega, watch, screenshot, devmode, forwardCmd, pasteboardCmd, location, crash, files, newBackupCmd(), recovery, ddi)
 	return cmd
 }
 

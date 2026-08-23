@@ -120,9 +120,14 @@ func (g *GoIOS) List(ctx context.Context) ([]Dev, error) {
 	}
 	out := make([]Dev, 0, len(list.DeviceList))
 	for _, d := range list.DeviceList {
-		out = append(out, Dev{UDID: d.Properties.SerialNumber, Transport: Transport(d.Properties.ConnectionType), Transports: []Transport{Transport(d.Properties.ConnectionType)}})
+		out = append(out, Dev{
+			UDID:       d.Properties.SerialNumber,
+			Transport:  Transport(d.Properties.ConnectionType),
+			Transports: []Transport{Transport(d.Properties.ConnectionType)},
+			State:      ClassifyState(d.Properties),
+		})
 	}
-	return out, nil
+	return Distinct(out), nil
 }
 
 func (g *GoIOS) Pair(ctx context.Context, udid string, sup *Supervised) error {

@@ -27,6 +27,10 @@ type Dev struct {
 	UDID       string      // Properties.SerialNumber in usbmuxd terms
 	Transport  Transport   // preferred transport (USB wins when both exist)
 	Transports []Transport // every transport the device is reachable over
+	// State classifies the boot stage usbmuxd reported: "normal",
+	// "recovery", "dfu", or "" when unknown. Legacy devices in Recovery are
+	// visible through plain usbmuxd even though no lockdown service answers.
+	State string
 }
 
 // Info is the lockdown value subset worth printing.
@@ -214,6 +218,23 @@ type Handler interface {
 	FilesRemove(ctx context.Context, udid, appID, remotePath string) error
 	// FilesMkdir creates a remote directory.
 	FilesMkdir(ctx context.Context, udid, appID, remotePath string) error
+
+	// --- legacy reach (L1/L2) ---
+
+	// RecoveryEnter reboots a normal-mode device into Recovery mode via
+	// lockdownd's recovery_mode_handler service (the ideviceenterrecovery
+	// contract). The device disappears from normal transports until exited.
+	RecoveryEnter(ctx context.Context, udid string) error
+	// RecoveryExit boots a device out of Recovery mode. Exiting needs the
+	// iBoot protocol over raw USB, which a no-cgo build deliberately does
+	// not implement — implementations return typed KindUnsupported.
+	RecoveryExit(ctx context.Context, udid string) error
+	// DDIMount mounts a local (or fetched) Developer Disk Image on iOS <=16.
+	DDIMount(ctx context.Context, udid, imagePath string, download bool) error
+	// DDIStatus lists mounted image signatures (empty slice = none mounted).
+	DDIStatus(ctx context.Context, udid string) ([]string, error)
+	// DDIUnmount detaches the mounted image.
+	DDIUnmount(ctx context.Context, udid string) error
 
 	OmegaRestore(ctx context.Context, udid string, progress func(float64)) error
 	Restart(ctx context.Context, udid string) error
