@@ -187,6 +187,34 @@ type Handler interface {
 	PasteboardGet(ctx context.Context, udid string) (string, bool, error)
 	// PasteboardSet writes text to the device clipboard.
 	PasteboardSet(ctx context.Context, udid, text string) error
+
+	// --- driver surface (the idevicebackup2/iMazing/mobiledevice category) ---
+
+	// LocationSet simulates a GPS coordinate on the device (developer
+	// location spoofing). Cleared by LocationReset or an actual reboot.
+	LocationSet(ctx context.Context, udid, lat, lon string) error
+	// LocationGPX replays a GPX track as simulated movement.
+	LocationGPX(ctx context.Context, udid, gpxPath string) error
+	// LocationReset stops simulation.
+	LocationReset(ctx context.Context, udid string) error
+	// CrashList names the crash logs matching pattern (empty = all).
+	CrashList(ctx context.Context, udid, pattern string) ([]string, error)
+	// CrashPull downloads matching crash logs into localDir, returning names.
+	CrashPull(ctx context.Context, udid, pattern, localDir string) ([]string, error)
+	// CrashClear deletes matching crash logs from the device.
+	CrashClear(ctx context.Context, udid, pattern string) error
+	// FilesLs lists a remote directory. appID "" addresses the media
+	// partition (AFC); otherwise it is an app's sandbox via house_arrest.
+	FilesLs(ctx context.Context, udid, appID, remotePath string) ([]string, error)
+	// FilesPull copies a remote file/directory tree recursively into localDir.
+	FilesPull(ctx context.Context, udid, appID, remotePath, localDir string) error
+	// FilesPush uploads a local file/directory tree into remoteDir.
+	FilesPush(ctx context.Context, udid, appID, localPath, remoteDir string) error
+	// FilesRemove deletes a remote file or tree.
+	FilesRemove(ctx context.Context, udid, appID, remotePath string) error
+	// FilesMkdir creates a remote directory.
+	FilesMkdir(ctx context.Context, udid, appID, remotePath string) error
+
 	OmegaRestore(ctx context.Context, udid string, progress func(float64)) error
 	Restart(ctx context.Context, udid string) error
 	Shutdown(ctx context.Context, udid string) error

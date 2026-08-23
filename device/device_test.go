@@ -37,6 +37,10 @@ type fake struct {
 	forwardCalls [][2]uint16
 	clipboard    string
 	clipboardSet string
+	locationSet  string
+	filesLs      []string
+	pulledPath   string
+	pushedPath   string
 	restarts     int
 	shutdowns    int
 }
@@ -144,6 +148,36 @@ func (f *fake) PasteboardGet(ctx context.Context, udid string) (string, bool, er
 }
 func (f *fake) PasteboardSet(ctx context.Context, udid, text string) error {
 	f.clipboardSet = text
+	return nil
+}
+func (f *fake) LocationSet(ctx context.Context, udid, lat, lon string) error {
+	f.locationSet = lat + "," + lon
+	return nil
+}
+func (f *fake) LocationGPX(ctx context.Context, udid, gpxPath string) error { return nil }
+func (f *fake) LocationReset(ctx context.Context, udid string) error        { return nil }
+func (f *fake) CrashList(ctx context.Context, udid, pattern string) ([]string, error) {
+	return []string{"App.crash", "SpringBoard.ips"}, nil
+}
+func (f *fake) CrashPull(ctx context.Context, udid, pattern, localDir string) ([]string, error) {
+	return f.CrashList(ctx, udid, pattern)
+}
+func (f *fake) CrashClear(ctx context.Context, udid, pattern string) error { return nil }
+func (f *fake) FilesLs(ctx context.Context, udid, appID, remotePath string) ([]string, error) {
+	return f.filesLs, nil
+}
+func (f *fake) FilesPull(ctx context.Context, udid, appID, remotePath, localDir string) error {
+	f.pulledPath = remotePath
+	return nil
+}
+func (f *fake) FilesPush(ctx context.Context, udid, appID, localPath, remoteDir string) error {
+	f.pushedPath = localPath + " -> " + remoteDir
+	return nil
+}
+func (f *fake) FilesRemove(ctx context.Context, udid, appID, remotePath string) error {
+	return nil
+}
+func (f *fake) FilesMkdir(ctx context.Context, udid, appID, remotePath string) error {
 	return nil
 }
 func (f *fake) Restart(ctx context.Context, udid string) error { f.restarts++; return nil }

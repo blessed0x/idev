@@ -30,6 +30,10 @@ type stubDevHandler struct {
 	devMode      device.DevMode
 	forwardPorts [2]uint16
 	clipboardSet string
+	locationSet  string
+	crashList    []string
+	filesLs      []string
+	filesAppID   string
 }
 
 func (s *stubDevHandler) Close() error                                   { return nil }
@@ -84,6 +88,39 @@ func (s *stubDevHandler) PasteboardGet(ctx context.Context, udid string) (string
 }
 func (s *stubDevHandler) PasteboardSet(ctx context.Context, udid, text string) error {
 	s.clipboardSet = text
+	return nil
+}
+func (s *stubDevHandler) LocationSet(ctx context.Context, udid, lat, lon string) error {
+	s.locationSet = lat + "," + lon
+	return nil
+}
+func (s *stubDevHandler) LocationGPX(ctx context.Context, udid, gpxPath string) error {
+	return nil
+}
+func (s *stubDevHandler) LocationReset(ctx context.Context, udid string) error { return nil }
+func (s *stubDevHandler) CrashList(ctx context.Context, udid, pattern string) ([]string, error) {
+	return s.crashList, nil
+}
+func (s *stubDevHandler) CrashPull(ctx context.Context, udid, pattern, localDir string) ([]string, error) {
+	return s.crashList, nil
+}
+func (s *stubDevHandler) CrashClear(ctx context.Context, udid, pattern string) error { return nil }
+func (s *stubDevHandler) FilesLs(ctx context.Context, udid, appID, path string) ([]string, error) {
+	s.filesAppID = appID
+	return s.filesLs, nil
+}
+func (s *stubDevHandler) FilesPull(ctx context.Context, udid, appID, remotePath, localDir string) error {
+	s.filesAppID = appID
+	return nil
+}
+func (s *stubDevHandler) FilesPush(ctx context.Context, udid, appID, localPath, remoteDir string) error {
+	s.filesAppID = appID
+	return nil
+}
+func (s *stubDevHandler) FilesRemove(ctx context.Context, udid, appID, path string) error {
+	return nil
+}
+func (s *stubDevHandler) FilesMkdir(ctx context.Context, udid, appID, path string) error {
 	return nil
 }
 
@@ -572,5 +609,71 @@ func TestDevicePasteboardGetSet(t *testing.T) {
 
 	if _, err := runDeviceCmdStub(t, stub, "pasteboard", "bogus"); err == nil {
 		t.Fatal("unknown pasteboard verb must fail")
+	}
+}
+
+func TestDeviceLocationSetClear(t *testing.T) {
+	stub := &stubDevHandler{devs: []device.Dev{{UDID: "AAAA", Transport: device.TransportUSB}}}
+	orig := deviceHandler
+	deviceHandler = func(o device.Options) device.Handler { return stub }
+	t.Cleanup(func() { deviceHandler = orig })
+
+	if _, err := runDeviceCmdStub(t, stub, "location", "set", "37.33,-122.03"); err != nil {
+		t.Fatal(err)
+	}
+	if stub.locationSet != "37.33,-122.03" {
+		t.Fatalf("coords must reach handler verbatim, got %q", stub.locationSet)
+	}
+	if _, err := runDeviceCmdStub(t, stub, "location", "clear"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := runDeviceCmdStub(t, stub, "location", "bogus"); err == nil {
+		t.Fatal("unknown location verb must fail")
+	}
+}
+
+func TestDeviceCrashListPull(t *testing.T) {
+	stub := &stubDevHandler{
+		devs:      []device.Dev{{UDID: "AAAA", Transport: device.TransportUSB}},
+		crashList: []string{"App-2026.crash"},
+	}
+	orig := deviceHandler
+	deviceHandler = func(o device.Options) device.Handler { return stub }
+	t.Cleanup(func() { deviceHandler = orig })
+
+	out, err := runDeviceCmdStub(t, stub, "crash", "list")
+	if err != nil || !strings.Contains(out, "App-2026.crash") {
+		t.Fatalf("crash list output wrong: %q %v", out, err)
+	}
+	dir := t.TempDir()
+	if _, err := runDeviceCmdStub(t, stub, "crash", "pull", dir); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestDeviceFilesLsPassesAppScope(t *testing.T) {
+	stub := &stubDevHandler{
+		devs:    []device.Dev{{UDID: "AAAA", Transport: device.TransportUSB}},
+		filesLs: []string{"DCIM", "Downloads"},
+	}
+	orig := deviceHandler
+	deviceHandler = func(o device.Options) device.Handler { return stub }
+	t.Cleanup(func() { deviceHandler = orig })
+
+	// media partition (no -a)
+	out, err := runDeviceCmdStub(t, stub, "files", "ls", "/")
+	if err != nil || !strings.Contains(out, "DCIM") {
+		t.Fatalf("files ls output wrong: %q %v", out, err)
+	}
+	if stub.filesAppID != "" {
+		t.Fatalf("media scope must pass empty appID, got %q", stub.filesAppID)
+	}
+
+	// app sandbox (-a)
+	if _, err := runDeviceCmdStub(t, stub, "files", "ls", "-a", "com.example.app", "/Documents"); err != nil {
+		t.Fatal(err)
+	}
+	if stub.filesAppID != "com.example.app" {
+		t.Fatalf("-a must scope to the app sandbox, got %q", stub.filesAppID)
 	}
 }

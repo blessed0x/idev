@@ -604,7 +604,158 @@ make a backup. The phone reboots by itself when the restore finishes.`,
 			}
 		}}
 
-	cmd.AddCommand(list, doctor, pair, info, battery, apps, install, uninstall, launch, kill, syslogCmd, restart, shutdown, omega, watch, screenshot, devmode, forwardCmd, pasteboardCmd)
+	// location: GPS simulation (developer staple since pmd3/lldb days).
+	location := &cobra.Command{Use: "location <set lat,lon | clear | gpx file.gpx>", Short: "simulate GPS coordinates or replay a GPX track",
+		Args: cobra.MinimumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			dh := h()
+			defer dh.Close()
+			target, err := resolveUDID(cmd, dh, udid)
+			if err != nil {
+				return err
+			}
+			switch args[0] {
+			case "set":
+				// One comma-joined arg ("37.33,-122.03") so negative
+				// longitudes never fight pflag's dash parsing.
+				if len(args) != 2 || !strings.Contains(args[1], ",") {
+					return fmt.Errorf("location set needs coordinates as \"lat,lon\" (e.g. 37.3349,-122.0090)")
+				}
+				parts := strings.SplitN(args[1], ",", 2)
+				return dh.LocationSet(cmd.Context(), target.UDID, parts[0], parts[1])
+			case "clear":
+				if len(args) != 1 {
+					return fmt.Errorf("location clear takes no arguments")
+				}
+				return dh.LocationReset(cmd.Context(), target.UDID)
+			case "gpx":
+				if len(args) != 2 {
+					return fmt.Errorf("location gpx needs a .gpx file")
+				}
+				return dh.LocationGPX(cmd.Context(), target.UDID, args[1])
+			default:
+				return fmt.Errorf("unknown location verb %q (use set, clear or gpx)", args[0])
+			}
+		}}
+
+	// crash: the device's crash-log store.
+	var crashPattern string
+	crash := &cobra.Command{Use: "crash <list|pull|clear> [dir]", Short: "list, pull or clear the device's crash logs",
+		Args: cobra.RangeArgs(1, 2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			dh := h()
+			defer dh.Close()
+			target, err := resolveUDID(cmd, dh, udid)
+			if err != nil {
+				return err
+			}
+			switch args[0] {
+			case "list":
+				names, err := dh.CrashList(cmd.Context(), target.UDID, crashPattern)
+				if err != nil {
+					return err
+				}
+				return printJSONOr(cmd, showJSON, names, func() error {
+					for _, n := range names {
+						fmt.Fprintln(cmd.OutOrStdout(), n)
+					}
+					return nil
+				})
+			case "pull":
+				if len(args) != 2 {
+					return fmt.Errorf("crash pull needs a destination directory")
+				}
+				names, err := dh.CrashPull(cmd.Context(), target.UDID, crashPattern, args[1])
+				if err != nil {
+					return err
+				}
+				log.Infof("%d crash log(s) in %s", len(names), args[1])
+				return nil
+			case "clear":
+				return dh.CrashClear(cmd.Context(), target.UDID, crashPattern)
+			default:
+				return fmt.Errorf("unknown crash verb %q (use list, pull or clear)", args[0])
+			}
+		}}
+	crash.PersistentFlags().StringVar(&crashPattern, "pattern", "", "only files whose name contains this text")
+
+	// files: the iMazing-lite surface — media partition via AFC by default,
+	// an app's sandbox through house_arrest with -a.
+	files := &cobra.Command{Use: "files", Short: "browse the media partition or an app sandbox (the iMazing-lite surface)",
+		Long: `files talks to the two filesystem services iOS exposes over usbmuxd:
+
+  default            the media partition (DCIM, iTunes_Control, Downloads)
+  -a <bundle-id>     that app's sandbox Documents/... via house_arrest
+
+Recursive for pull/push. Every path is what the service sees (/ = root).`}
+	filesApp := files.PersistentFlags().StringP("app", "a", "", "target an app's sandbox instead of the media partition (bundle id)")
+	filesLs := &cobra.Command{Use: "ls <remote-path>", Short: "list a remote directory (media partition, or -a app sandbox)",
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			dh := h()
+			defer dh.Close()
+			target, err := resolveUDID(cmd, dh, udid)
+			if err != nil {
+				return err
+			}
+			names, err := dh.FilesLs(cmd.Context(), target.UDID, *filesApp, args[0])
+			if err != nil {
+				return err
+			}
+			return printJSONOr(cmd, showJSON, names, func() error {
+				for _, n := range names {
+					fmt.Fprintln(cmd.OutOrStdout(), n)
+				}
+				return nil
+			})
+		}}
+	filesPull := &cobra.Command{Use: "pull <remote-path> <local-dir>", Short: "copy a remote file or tree down",
+		Args: cobra.ExactArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			dh := h()
+			defer dh.Close()
+			target, err := resolveUDID(cmd, dh, udid)
+			if err != nil {
+				return err
+			}
+			return dh.FilesPull(cmd.Context(), target.UDID, *filesApp, args[0], args[1])
+		}}
+	filesPush := &cobra.Command{Use: "push <local-path> <remote-dir>", Short: "upload a local file or tree",
+		Args: cobra.ExactArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			dh := h()
+			defer dh.Close()
+			target, err := resolveUDID(cmd, dh, udid)
+			if err != nil {
+				return err
+			}
+			return dh.FilesPush(cmd.Context(), target.UDID, *filesApp, args[0], args[1])
+		}}
+	filesRm := &cobra.Command{Use: "rm <remote-path>", Short: "delete a remote file or tree",
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			dh := h()
+			defer dh.Close()
+			target, err := resolveUDID(cmd, dh, udid)
+			if err != nil {
+				return err
+			}
+			return dh.FilesRemove(cmd.Context(), target.UDID, *filesApp, args[0])
+		}}
+	filesMkdir := &cobra.Command{Use: "mkdir <remote-path>", Short: "create a remote directory",
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			dh := h()
+			defer dh.Close()
+			target, err := resolveUDID(cmd, dh, udid)
+			if err != nil {
+				return err
+			}
+			return dh.FilesMkdir(cmd.Context(), target.UDID, *filesApp, args[0])
+		}}
+	files.AddCommand(filesLs, filesPull, filesPush, filesRm, filesMkdir)
+
+	cmd.AddCommand(list, doctor, pair, info, battery, apps, install, uninstall, launch, kill, syslogCmd, restart, shutdown, omega, watch, screenshot, devmode, forwardCmd, pasteboardCmd, location, crash, files)
 	return cmd
 }
 

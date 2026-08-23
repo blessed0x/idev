@@ -5,17 +5,23 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"time"
 
 	"github.com/danielpaulus/go-ios/ios"
+	"github.com/danielpaulus/go-ios/ios/afc"
+	"github.com/danielpaulus/go-ios/ios/crashreport"
 	"github.com/danielpaulus/go-ios/ios/diagnostics"
 	"github.com/danielpaulus/go-ios/ios/forward"
+	"github.com/danielpaulus/go-ios/ios/house_arrest"
 	"github.com/danielpaulus/go-ios/ios/installationproxy"
 	"github.com/danielpaulus/go-ios/ios/instruments"
 	"github.com/danielpaulus/go-ios/ios/ostrace"
 	"github.com/danielpaulus/go-ios/ios/pasteboard"
+	"github.com/danielpaulus/go-ios/ios/simlocation"
 	"github.com/danielpaulus/go-ios/ios/syslog"
 	"github.com/danielpaulus/go-ios/ios/zipconduit"
 
@@ -645,6 +651,244 @@ func (g *GoIOS) PasteboardSet(ctx context.Context, udid, text string) error {
 	if err != nil {
 		return g.wrap(KindConnection, "write clipboard", "unlock the device and try again", err)
 	}
+	return nil
+}
+
+// --- driver surface ---
+
+func (g *GoIOS) LocationSet(ctx context.Context, udid, lat, lon string) error {
+	dev, err := g.entry(ctx, udid)
+	if err != nil {
+		return err
+	}
+	err = g.run(ctx, func() error { return simlocation.SetLocation(dev, lat, lon) })
+	if err != nil {
+		return g.wrap(KindConnection, "set location", "the Developer Disk Image (<=iOS 16) or tunnel (17+) must be active", err)
+	}
+	log.Infof("location set to %s,%s", lat, lon)
+	return nil
+}
+
+func (g *GoIOS) LocationGPX(ctx context.Context, udid, gpxPath string) error {
+	dev, err := g.entry(ctx, udid)
+	if err != nil {
+		return err
+	}
+	err = g.run(ctx, func() error { return simlocation.SetLocationGPX(dev, gpxPath) })
+	if err != nil {
+		return g.wrap(KindConnection, "replay GPX", "the file must be a valid GPX track", err)
+	}
+	log.Infof("replaying %s", gpxPath)
+	return nil
+}
+
+func (g *GoIOS) LocationReset(ctx context.Context, udid string) error {
+	dev, err := g.entry(ctx, udid)
+	if err != nil {
+		return err
+	}
+	err = g.run(ctx, func() error { return simlocation.ResetLocation(dev) })
+	if err != nil {
+		return g.wrap(KindConnection, "reset location", "", err)
+	}
+	log.Infof("location reset")
+	return nil
+}
+
+func (g *GoIOS) CrashList(ctx context.Context, udid, pattern string) ([]string, error) {
+	dev, err := g.entry(ctx, udid)
+	if err != nil {
+		return nil, err
+	}
+	var out []string
+	err = g.run(ctx, func() error {
+		var lerr error
+		out, lerr = crashreport.ListReports(dev, pattern)
+		return lerr
+	})
+	if err != nil {
+		return nil, g.wrap(KindConnection, "list crash logs", "", err)
+	}
+	return out, nil
+}
+
+func (g *GoIOS) CrashPull(ctx context.Context, udid, pattern, localDir string) ([]string, error) {
+	names, err := g.CrashList(ctx, udid, pattern)
+	if err != nil {
+		return nil, err
+	}
+	if len(names) == 0 {
+		return nil, nil
+	}
+	dev, err := g.entry(ctx, udid)
+	if err != nil {
+		return nil, err
+	}
+	if err := os.MkdirAll(localDir, 0o755); err != nil {
+		return nil, err
+	}
+	err = g.run(ctx, func() error { return crashreport.DownloadReports(dev, pattern, localDir) })
+	if err != nil {
+		return nil, g.wrap(KindInternal, "pull crash logs", "check free disk space locally", err)
+	}
+	log.Infof("pulled %d crash log(s) into %s", len(names), localDir)
+	return names, nil
+}
+
+func (g *GoIOS) CrashClear(ctx context.Context, udid, pattern string) error {
+	dev, err := g.entry(ctx, udid)
+	if err != nil {
+		return err
+	}
+	err = g.run(ctx, func() error { return crashreport.RemoveReports(dev, ".", pattern) })
+	if err != nil {
+		return g.wrap(KindInternal, "clear crash logs", "", err)
+	}
+	log.Infof("crash logs cleared")
+	return nil
+}
+
+// filesClient opens the file-service client: media AFC when appID is empty,
+// otherwise that app's sandbox through house_arrest.
+func (g *GoIOS) filesClient(ctx context.Context, udid, appID string) (*afc.Client, func(), error) {
+	dev, err := g.entry(ctx, udid)
+	if err != nil {
+		return nil, nil, err
+	}
+	if appID == "" {
+		client, aerr := afc.New(dev)
+		if aerr != nil {
+			return nil, nil, g.wrap(KindConnection, "open media partition", "", aerr)
+		}
+		return client, func() { _ = client.Close() }, nil
+	}
+	client, herr := house_arrest.New(dev, appID)
+	if herr != nil {
+		return nil, nil, g.wrap(KindNotFound, "open app sandbox",
+			"is the bundle id installed? see \"idev apps\"", herr)
+	}
+	return client, func() { _ = client.Close() }, nil
+}
+
+func (g *GoIOS) FilesLs(ctx context.Context, udid, appID, remotePath string) ([]string, error) {
+	client, done, err := g.filesClient(ctx, udid, appID)
+	if err != nil {
+		return nil, err
+	}
+	defer done()
+	var out []string
+	err = g.run(ctx, func() error {
+		var lerr error
+		out, lerr = client.List(remotePath)
+		return lerr
+	})
+	if err != nil {
+		return nil, g.wrap(KindNotFound, "list files", "does the path exist?", err)
+	}
+	return out, nil
+}
+
+func (g *GoIOS) FilesPull(ctx context.Context, udid, appID, remotePath, localDir string) error {
+	client, done, err := g.filesClient(ctx, udid, appID)
+	if err != nil {
+		return err
+	}
+	defer done()
+	err = g.run(ctx, func() error {
+		info, serr := client.Stat(remotePath)
+		if serr != nil {
+			return fmt.Errorf("remote path %s: %w", remotePath, serr)
+		}
+		dst := filepath.Join(localDir, filepath.Base(remotePath))
+		if !info.IsDir() {
+			return client.PullSingleFile(remotePath, dst)
+		}
+		if err := os.MkdirAll(dst, 0o755); err != nil {
+			return err
+		}
+		return client.WalkDir(remotePath, func(path string, info afc.FileInfo, werr error) error {
+			if werr != nil {
+				return werr
+			}
+			rel, rerr := filepath.Rel(remotePath, path)
+			if rerr != nil {
+				return rerr
+			}
+			target := filepath.Join(dst, rel)
+			if info.IsDir() {
+				return os.MkdirAll(target, 0o755)
+			}
+			return client.PullSingleFile(path, target)
+		})
+	})
+	if err != nil {
+		return g.wrap(KindInternal, "pull files", "", err)
+	}
+	log.Infof("pulled %s -> %s", remotePath, localDir)
+	return nil
+}
+
+func (g *GoIOS) FilesPush(ctx context.Context, udid, appID, localPath, remoteDir string) error {
+	client, done, err := g.filesClient(ctx, udid, appID)
+	if err != nil {
+		return err
+	}
+	defer done()
+	err = g.run(ctx, func() error {
+		st, serr := os.Stat(localPath)
+		if serr != nil {
+			return serr
+		}
+		if st.IsDir() {
+			return filepath.Walk(localPath, func(path string, info os.FileInfo, werr error) error {
+				if werr != nil {
+					return werr
+				}
+				rel, rerr := filepath.Rel(localPath, path)
+				if rerr != nil {
+					return rerr
+				}
+				target := filepath.ToSlash(filepath.Join(remoteDir, rel))
+				if info.IsDir() {
+					return client.MkDir(target)
+				}
+				return client.Push(path, target)
+			})
+		}
+		return client.Push(localPath, filepath.ToSlash(filepath.Join(remoteDir, filepath.Base(localPath))))
+	})
+	if err != nil {
+		return g.wrap(KindInternal, "push files", "", err)
+	}
+	log.Infof("pushed %s -> %s", localPath, remoteDir)
+	return nil
+}
+
+func (g *GoIOS) FilesRemove(ctx context.Context, udid, appID, remotePath string) error {
+	client, done, err := g.filesClient(ctx, udid, appID)
+	if err != nil {
+		return err
+	}
+	defer done()
+	err = g.run(ctx, func() error { return client.RemoveAll(remotePath) })
+	if err != nil {
+		return g.wrap(KindNotFound, "remove files", "does the path exist?", err)
+	}
+	log.Infof("removed %s", remotePath)
+	return nil
+}
+
+func (g *GoIOS) FilesMkdir(ctx context.Context, udid, appID, remotePath string) error {
+	client, done, err := g.filesClient(ctx, udid, appID)
+	if err != nil {
+		return err
+	}
+	defer done()
+	err = g.run(ctx, func() error { return client.MkDir(remotePath) })
+	if err != nil {
+		return g.wrap(KindConnection, "mkdir", "", err)
+	}
+	log.Infof("created %s", remotePath)
 	return nil
 }
 
