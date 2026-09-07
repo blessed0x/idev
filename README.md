@@ -27,7 +27,7 @@ tunnel that manages itself.
 ## Install
 
 ```bash
-go install github.com/blessed0x/idev/cmd/idev@latest        # any OS with Go
+go install github.com/blessed0x/go-idevice/cmd/idev@latest        # any OS with Go
 ```
 
 Prebuilt binaries land with releases (macOS/Linux/Windows × arm64/amd64).

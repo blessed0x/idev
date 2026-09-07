@@ -5,7 +5,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/blessed0x/idev/device"
+	"github.com/blessed0x/go-idevice/device"
 	"github.com/spf13/cobra"
 )
 

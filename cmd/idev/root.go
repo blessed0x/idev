@@ -15,8 +15,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/blessed0x/idev/device"
-	"github.com/blessed0x/idev/internal/log"
+	"github.com/blessed0x/go-idevice/device"
+	"github.com/blessed0x/go-idevice/internal/log"
 )
 
 // deviceHandler builds the device-control handler. A variable so tests can

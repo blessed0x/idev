@@ -15,8 +15,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/blessed0x/idev/device"
-	"github.com/blessed0x/idev/internal/log"
+	"github.com/blessed0x/go-idevice/device"
+	"github.com/blessed0x/go-idevice/internal/log"
 )
 
 type stubDevHandler struct {

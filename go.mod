@@ -1,4 +1,4 @@
-module github.com/blessed0x/idev
+module github.com/blessed0x/go-idevice
 
 go 1.26.6
 
