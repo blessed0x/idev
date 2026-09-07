@@ -8,7 +8,7 @@ import (
 
 	"github.com/danielpaulus/go-ios/ios"
 	"github.com/danielpaulus/go-ios/ios/imagemounter"
-	"github.com/gwnodex-bit/idev/internal/log"
+	"github.com/blessed0x/idev/internal/log"
 )
 
 // L2: Developer Disk Image mounting for iOS <=16 devices. On 17+ the same

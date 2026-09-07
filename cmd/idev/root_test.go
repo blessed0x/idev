@@ -15,8 +15,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gwnodex-bit/idev/device"
-	"github.com/gwnodex-bit/idev/internal/log"
+	"github.com/blessed0x/idev/device"
+	"github.com/blessed0x/idev/internal/log"
 )
 
 type stubDevHandler struct {

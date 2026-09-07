@@ -6,7 +6,7 @@ import (
 	"strings"
 
 	"github.com/danielpaulus/go-ios/ios"
-	"github.com/gwnodex-bit/idev/internal/log"
+	"github.com/blessed0x/idev/internal/log"
 )
 
 // L1: legacy boot-stage visibility.

@@ -15,8 +15,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/gwnodex-bit/idev/device"
-	"github.com/gwnodex-bit/idev/internal/log"
+	"github.com/blessed0x/idev/device"
+	"github.com/blessed0x/idev/internal/log"
 )
 
 // deviceHandler builds the device-control handler. A variable so tests can

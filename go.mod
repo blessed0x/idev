@@ -1,4 +1,4 @@
-module github.com/gwnodex-bit/idev
+module github.com/blessed0x/idev
 
 go 1.26.6
 
